@@ -8,8 +8,9 @@ function App() {
   return (
     <div>
       <Header />
-      <LivingConditionScore/>
-      <br></br>
+     
+     <LivingConditionScore/>
+      
       <Footer />
     </div>
   )
