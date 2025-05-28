@@ -1,12 +1,12 @@
 /* eslint-disable no-unused-vars */
-/* eslint-disable no-undef */
+/* eslint-disable no-undef */ // Keep this if 'vina' is a global var, otherwise remove
 import React, { useState, useEffect, useRef } from 'react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
-import { Thermometer, Droplets, Wind, Volume2, Activity, AlertTriangle, CheckCircle, XCircle, BarChart3 } from 'lucide-react';
+import { Thermometer, Droplets, Wind, Volume2, Activity, AlertTriangle, CheckCircle, XCircle, BarChart3, TrendingUp, Info, WifiOff } from 'lucide-react'; // Added more icons
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/database';
-import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import AnalyticsDashboard from '../components/AnalyticsDashboard'; // Assuming this path is correct
 
 ChartJS.register(ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement);
 
@@ -20,7 +20,7 @@ if (!firebase.apps.length) {
   firebase.initializeApp(FIREBASE_CONFIG);
   console.log('Firebase initialized successfully');
 } else {
-  firebase.app();
+  firebase.app(); // If already initialized, use existing instance
   console.log('Using existing Firebase app instance');
 }
 
@@ -30,51 +30,88 @@ const SCORING_CONFIG = {
     weight: 0.25,
     optimal: { min: 20, max: 26 },
     acceptable: { min: 18, max: 30 },
-    unit: '°C'
+    unit: '°C',
+    icon: Thermometer,
+    color: '#ef4444' // Red
   },
   humidity: {
     weight: 0.25,
     optimal: { min: 40, max: 60 },
     acceptable: { min: 30, max: 70 },
-    unit: '%'
+    unit: '%',
+    icon: Droplets,
+    color: '#3b82f6' // Blue
   },
   airQuality_ppm: {
     weight: 0.3,
     optimal: { min: 0, max: 400 },
     acceptable: { min: 0, max: 1000 },
-    unit: 'PPM'
+    unit: 'PPM',
+    icon: Wind,
+    color: '#22c55e' // Green
   },
   soundLevel: {
     weight: 0.2,
-    optimal: { min: 0, max: 0.3 },
+    optimal: { min: 0, max: 0.3 }, // Assuming 0-1 scale or similar
     acceptable: { min: 0, max: 0.7 },
-    unit: 'Level'
+    unit: 'Level', // Unit can be dB or a relative scale
+    icon: Volume2,
+    color: '#f59e0b' // Amber
   }
 };
 
-// Toast notification function
-const showToast = (message, type = 'info') => {
+// Toast notification function (enhanced slightly)
+const showToast = (message, type = 'info', icon) => {
   const toast = document.createElement('div');
-  toast.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-all duration-300 ${
-    type === 'error' ? 'bg-red-500 text-white' : 
-    type === 'success' ? 'bg-green-500 text-white' : 
-    'bg-blue-500 text-white'
-  }`;
-  toast.textContent = message;
+  let bgColor, textColor, borderColor, IconComponent;
+
+  switch (type) {
+    case 'error':
+      bgColor = 'bg-red-500'; textColor = 'text-white'; borderColor = 'border-red-700'; IconComponent = icon || XCircle;
+      break;
+    case 'success':
+      bgColor = 'bg-green-500'; textColor = 'text-white'; borderColor = 'border-green-700'; IconComponent = icon || CheckCircle;
+      break;
+    default:
+      bgColor = 'bg-blue-500'; textColor = 'text-white'; borderColor = 'border-blue-700'; IconComponent = icon || Info;
+      break;
+  }
+
+  toast.className = `fixed top-5 right-5 p-4 rounded-lg shadow-xl z-[100] flex items-center space-x-3 transition-all duration-500 ease-in-out transform translate-x-full opacity-0 ${bgColor} ${textColor} border-l-4 ${borderColor}`;
+  
+  // Create icon element if IconComponent is provided
+  if (IconComponent) {
+    const iconElement = document.createElement('span');
+    // This is a hacky way to render Lucide icons. For a real app, use React Portals or a dedicated toast library.
+    iconElement.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IconComponent().props.children.map(child => child.props.d ? `<path d="${child.props.d}"></path>`: '').join('')}</svg>`;
+    toast.appendChild(iconElement);
+  }
+  
+  const textElement = document.createElement('span');
+  textElement.textContent = message;
+  toast.appendChild(textElement);
   
   document.body.appendChild(toast);
+
+  // Animate in
+  requestAnimationFrame(() => {
+    toast.classList.remove('translate-x-full', 'opacity-0');
+    toast.classList.add('translate-x-0', 'opacity-100');
+  });
   
   setTimeout(() => {
     if (toast.parentNode) {
-      toast.style.opacity = '0';
+      toast.classList.remove('translate-x-0', 'opacity-100');
+      toast.classList.add('translate-x-full', 'opacity-0');
       setTimeout(() => {
         if (toast.parentNode) {
           document.body.removeChild(toast);
         }
-      }, 300);
+      }, 500);
     }
-  }, 3000);
+  }, 3500);
 };
+
 
 // Firebase service
 class FirebaseService {
@@ -85,18 +122,18 @@ class FirebaseService {
     const listener = (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        console.log('Received Firebase data:', data);
+        // console.log('Received Firebase data:', data);
         callback(data);
       } else {
-        console.warn("No data received from Firebase at /latest_readings. Check path and security rules.");
-        callback(null);
+        console.warn("No data received from Firebase at /latest_readings.");
+        callback(null); // Explicitly pass null if no data
       }
     };
 
     const errorCallback = (error) => {
       console.error("Firebase read error:", error);
-      showToast(`Firebase error: ${error.message}. Check console, path, and security rules.`, 'error');
-      callback(null);
+      showToast(`Firebase error: ${error.message}. Cannot fetch live data.`, 'error', WifiOff);
+      callback(null); // Explicitly pass null on error
     };
 
     dataRef.on('value', listener, errorCallback);
@@ -117,242 +154,236 @@ const calculateScore = (sensorData) => {
 
   Object.entries(SCORING_CONFIG).forEach(([key, config]) => {
     const value = sensorData[key];
-    if (value !== undefined && vina !== null && !isNaN(parseFloat(value))) {
+    // Corrected: remove 'vina' which was a typo and likely meant 'value'
+    if (value !== undefined && value !== null && !isNaN(parseFloat(value))) {
       const numericValue = parseFloat(value);
       let score = 0;
       
-      if (numericValue >= config.optimal.min && numericValue <= config.optimal.max) {
-        score = 10;
-      } else if (numericValue >= config.acceptable.min && numericValue <= config.acceptable.max) {
-        const distanceFromOptimal = Math.min(
-          Math.abs(numericValue - config.optimal.min),
-          Math.abs(numericValue - config.optimal.max)
-        );
-        const maxDistance = Math.max(
-          config.optimal.min - config.acceptable.min,
-          config.acceptable.max - config.optimal.max
-        );
-        score = 5 + (maxDistance > 0 ? (5 * (1 - distanceFromOptimal / maxDistance)) : 5);
-      } else {
-        const distanceFromAcceptable = Math.min(
-          Math.abs(numericValue - config.acceptable.min),
-          Math.abs(numericValue - config.acceptable.max)
-        );
-        score = Math.max(0, 5 * Math.exp(-distanceFromAcceptable / (key === 'airQuality_ppm' ? 1000 : 100)));
+      // Invert logic for airQuality_ppm and soundLevel where lower is better
+      // For these, optimal.max is good, optimal.min is not necessarily the "best"
+      // This example scoring is simplified; real-world might need non-linear functions
+      if (key === 'airQuality_ppm' || key === 'soundLevel') {
+        if (numericValue <= config.optimal.max) { // Lower is better, so check against max
+          score = 10;
+        } else if (numericValue <= config.acceptable.max) {
+          score = 5 + 5 * (1 - (numericValue - config.optimal.max) / (config.acceptable.max - config.optimal.max));
+        } else {
+          // Exponential decay for values outside acceptable range
+           score = Math.max(0, 5 * Math.exp(-(numericValue - config.acceptable.max) / (config.acceptable.max * 0.5))); // Decay faster
+        }
+      } else { // For temperature and humidity where a range is optimal
+        if (numericValue >= config.optimal.min && numericValue <= config.optimal.max) {
+          score = 10;
+        } else if (numericValue >= config.acceptable.min && numericValue <= config.acceptable.max) {
+          const rangeWidth = config.optimal.min - config.acceptable.min; // Assuming symmetric acceptable range
+          const dist = numericValue < config.optimal.min ? config.optimal.min - numericValue : numericValue - config.optimal.max;
+          score = 5 + 5 * (1 - dist / rangeWidth);
+        } else {
+           const dist = numericValue < config.acceptable.min ? config.acceptable.min - numericValue : numericValue - config.acceptable.max;
+           score = Math.max(0, 5 * Math.exp(-dist / ((config.acceptable.max - config.acceptable.min) * 0.2))); // Decay faster
+        }
       }
-
+      score = Math.max(0, Math.min(10, score)); // Clamp score between 0 and 10
       totalScore += score * config.weight;
       totalWeight += config.weight;
     }
   });
-
-  return totalWeight === 0 ? 0 : Math.round((totalScore / totalWeight) * 10) / 10;
+  if (totalWeight === 0) return 0;
+  const finalScore = (totalScore / totalWeight);
+  return Math.round(finalScore * 10) / 10; // Score out of 10, one decimal place
 };
 
-// Gauge Chart Component
+// Gauge Chart Component (Enhanced UI)
 const GaugeChart = ({ score }) => {
-  const getScoreColor = (score) => {
-    if (score >= 8) return '#22c55e';
-    if (score >= 6) return '#eab308';
-    if (score >= 4) return '#f97316';
-    return '#ef4444';
+  const getScoreAttributes = (score) => {
+    if (score >= 8) return { color: '#22c55e', label: 'Excellent', bgColor: 'bg-green-50' };
+    if (score >= 6) return { color: '#f59e0b', label: 'Good', bgColor: 'bg-amber-50' }; // Changed to amber
+    if (score >= 4) return { color: '#f97316', label: 'Fair', bgColor: 'bg-orange-50' };
+    return { color: '#ef4444', label: 'Poor', bgColor: 'bg-red-50' };
   };
 
-  const getScoreLabel = (score) => {
-    if (score >= 8) return 'Excellent';
-    if (score >= 6) return 'Good';
-    if (score >= 4) return 'Fair';
-    return 'Poor';
-  };
-
+  const { color, label, bgColor } = getScoreAttributes(score);
   const percentage = (score / 10) * 100;
-  const color = getScoreColor(score);
 
   const data = {
     datasets: [{
       data: [percentage, 100 - percentage],
-      backgroundColor: [color, '#e5e7eb'],
+      backgroundColor: [color, '#e5e7eb'], // Use a lighter gray for the remainder
       borderWidth: 0,
-      cutout: '75%',
+      cutout: '80%', // Thinner ring
+      borderRadius: 20, // Rounded ends for the arc
     }]
   };
 
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: { enabled: false }
-    }
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    animation: {
+      animateRotate: true,
+      animateScale: true,
+      duration: 1000,
+    },
   };
 
   return (
-    <div className="relative w-64 h-64 mx-auto">
+    <div className={`relative w-56 h-56 md:w-64 md:h-64 mx-auto p-2 rounded-full ${bgColor}`}>
       <Doughnut data={data} options={options} />
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="text-4xl font-bold" style={{ color }}>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <div className="text-5xl md:text-6xl font-bold" style={{ color }}>
           {score.toFixed(1)}
         </div>
-        <div className="text-sm text-gray-600">
-          {getScoreLabel(score)}
+        <div className="text-sm md:text-base font-medium text-slate-700 mt-1" style={{ color }}>
+          {label}
         </div>
       </div>
     </div>
   );
 };
 
-// Sensor Card Component
-const SensorCard = ({ icon: Icon, title, value, unit, status }) => {
-  const getStatusColor = (status) => {
+
+// Sensor Card Component (Enhanced UI)
+const SensorCard = ({ icon: Icon, title, value, unit, status, color }) => {
+  const getStatusAttributes = (status) => {
     switch (status) {
-      case 'excellent': return 'text-green-500';
-      case 'good': return 'text-yellow-500';
-      case 'poor': return 'text-red-500';
-      default: return 'text-gray-500';
+      case 'excellent': return { SIcon: CheckCircle, sColor: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-500' };
+      case 'good': return { SIcon: AlertTriangle, sColor: 'text-amber-600', bgColor: 'bg-amber-50', borderColor: 'border-amber-500' };
+      case 'poor': return { SIcon: XCircle, sColor: 'text-red-600', bgColor: 'bg-red-50', borderColor: 'border-red-500' };
+      default: return { SIcon: Activity, sColor: 'text-slate-500', bgColor: 'bg-slate-50', borderColor: 'border-slate-400' };
     }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'excellent': return CheckCircle;
-      case 'good': return AlertTriangle;
-      case 'poor': return XCircle;
-      default: return Activity;
-    }
-  };
-
-  const StatusIcon = getStatusIcon(status);
+  const { SIcon, sColor, bgColor, borderColor } = getStatusAttributes(status);
+  const displayValue = (value !== null && value !== undefined && !isNaN(parseFloat(value))) ? `${parseFloat(value).toFixed(title === "Sound Level" ? 3 : 1)} ${unit}` : 'N/A';
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <Icon className="w-8 h-8 text-blue-500 mr-3" />
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
-            <p className="text-2xl font-bold text-gray-900">
-              {value !== null && value !== undefined ? `${value} ${unit}` : 'N/A'}
-            </p>
+    <div className={`rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 ease-out transform hover:-translate-y-1 ${bgColor} border-l-4 ${borderColor} overflow-hidden`}>
+      <div className="p-5">
+        <div className="flex items-start justify-between mb-3">
+          <div className="p-3 rounded-full" style={{ backgroundColor: `${color}20` }}> {/* Icon background with opacity */}
+            <Icon className="w-7 h-7" style={{ color: color }} />
           </div>
+          <SIcon className={`w-6 h-6 mt-1 ${sColor}`} />
         </div>
-        {status !== 'unknown' && <StatusIcon className={`w-6 h-6 ${getStatusColor(status)}`} />}
+        <div>
+          <h3 className="text-lg font-semibold text-slate-700 mb-1">{title}</h3>
+          <p className="text-3xl font-bold text-slate-800" style={{ color: color }}>
+            {displayValue}
+          </p>
+        </div>
       </div>
     </div>
   );
 };
 
-// Main Dashboard Component
+// Main Dashboard Component (Enhanced UI)
 const Dashboard = ({ onNavigateToAnalytics, sensorData, score }) => {
   const getSensorStatus = (key, value) => {
-    if (value === null || value === undefined) return 'unknown';
-    
+    if (value === null || value === undefined || value === 'N/A') return 'unknown';
     const config = SCORING_CONFIG[key];
     if (!config) return 'unknown';
-
     const numericValue = parseFloat(value);
     if (isNaN(numericValue)) return 'unknown';
 
-    if (numericValue >= config.optimal.min && numericValue <= config.optimal.max) {
-      return 'excellent';
-    } else if (numericValue >= config.acceptable.min && numericValue <= config.acceptable.max) {
-      return 'good';
-    } else {
-      return 'poor';
+    if (key === 'airQuality_ppm' || key === 'soundLevel') { // Lower is better
+        if (numericValue <= config.optimal.max) return 'excellent';
+        if (numericValue <= config.acceptable.max) return 'good';
+        return 'poor';
+    } else { // Range is optimal
+        if (numericValue >= config.optimal.min && numericValue <= config.optimal.max) return 'excellent';
+        if (numericValue >= config.acceptable.min && numericValue <= config.acceptable.max) return 'good';
+        return 'poor';
     }
   };
 
   if (!sensorData) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading sensor data from Firebase...</p>
-          <p className="mt-2 text-sm text-gray-500">If this persists, check your internet connection, Firebase path, and security rules.</p>
-        </div>
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-6 text-center">
+        <div className="animate-spin rounded-full h-20 w-20 md:h-24 md:w-24 border-t-4 border-b-4 border-blue-500 mb-6"></div>
+        <h2 className="text-2xl md:text-3xl font-semibold text-slate-700 mb-2">Connecting to Live Data...</h2>
+        <p className="text-slate-500 md:text-lg">
+          Attempting to fetch real-time environmental readings.
+        </p>
+        <p className="mt-3 text-sm text-slate-400">
+          If this persists, please check your internet connection and Firebase setup.
+        </p>
       </div>
     );
   }
+  
+  const lastUpdatedTimestamp = sensorData.timestamp;
+  let lastUpdatedString = 'N/A';
+  if (lastUpdatedTimestamp) {
+    const tsNumber = parseInt(lastUpdatedTimestamp);
+    if (!isNaN(tsNumber)) {
+        // Assuming timestamp might be in seconds or milliseconds
+        const dateObj = new Date(tsNumber * (String(tsNumber).length === 10 ? 1000 : 1));
+        lastUpdatedString = dateObj.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } else {
+        lastUpdatedString = String(lastUpdatedTimestamp); // Fallback if not a number
+    }
+  }
+
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">      
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Living Condition Monitor</h1>
-        <p className="text-gray-600 mt-2">Real-time environmental monitoring dashboard</p>
-      </div>
+    <div className="min-h-screen bg-slate-100 p-4 md:p-8">
+      <header className="text-center mb-10 md:mb-12">
+        <h1 className="text-4xl md:text-5xl font-bold text-slate-800 tracking-tight">Living Condition Monitor</h1>
+        <p className="text-slate-600 mt-3 text-lg md:text-xl">Your real-time environmental dashboard.</p>
+      </header>
 
-      <div className="bg-white rounded-lg shadow-md p-8 mb-8">
+      <div className="bg-white rounded-xl shadow-xl p-6 md:p-10 mb-10 md:mb-12">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">Overall Living Condition Score</h2>
+          <h2 className="text-2xl md:text-3xl font-semibold text-slate-700 mb-6 md:mb-8">Overall Living Condition Score</h2>
           <GaugeChart score={score} />
-          <p className="text-gray-600 mt-4">
-            Last updated: {
-              sensorData.timestamp 
-                ? (!isNaN(parseInt(sensorData.timestamp))
-                    ? new Date(parseInt(sensorData.timestamp) * 1000).toLocaleString()
-                    : String(sensorData.timestamp))
-                : 'N/A'
-            }
+          <p className="text-slate-500 mt-6 md:mt-8 text-sm">
+            Last updated: {lastUpdatedString}
           </p>
           <button
             onClick={onNavigateToAnalytics}
-            className="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md transition-colors duration-200 flex items-center gap-2 mx-auto"
+            className="mt-6 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 flex items-center gap-2 mx-auto text-base md:text-lg"
           >
-            <BarChart3 className="w-5 h-5" />
-            View Analytics
+            <TrendingUp className="w-5 h-5" />
+            View Detailed Analytics
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <SensorCard
-          icon={Thermometer}
-          title="Temperature"
-          value={sensorData.temperature !== undefined && sensorData.temperature !== null ? parseFloat(sensorData.temperature).toFixed(1) : null}
-          unit={SCORING_CONFIG.temperature.unit}
-          status={getSensorStatus('temperature', sensorData.temperature)}
-        />
-        <SensorCard
-          icon={Droplets}
-          title="Humidity"
-          value={sensorData.humidity !== undefined && sensorData.humidity !== null ? parseFloat(sensorData.humidity).toFixed(1) : null}
-          unit={SCORING_CONFIG.humidity.unit}
-          status={getSensorStatus('humidity', sensorData.humidity)}
-        />
-        <SensorCard
-          icon={Wind}
-          title="Air Quality"
-          value={sensorData.airQuality_ppm !== undefined && sensorData.airQuality_ppm !== null ? parseFloat(sensorData.airQuality_ppm).toFixed(2) : null}
-          unit={SCORING_CONFIG.airQuality_ppm.unit}
-          status={getSensorStatus('airQuality_ppm', sensorData.airQuality_ppm)}
-        />
-        <SensorCard
-          icon={Volume2}
-          title="Sound Level"
-          value={sensorData.soundLevel !== undefined && sensorData.soundLevel !== null ? parseFloat(sensorData.soundLevel).toFixed(3) : null}
-          unit={SCORING_CONFIG.soundLevel.unit}
-          status={getSensorStatus('soundLevel', sensorData.soundLevel)}
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 md:mb-12">
+        {Object.entries(SCORING_CONFIG).map(([key, config]) => (
+          <SensorCard
+            key={key}
+            icon={config.icon}
+            title={key.replace('_ppm', '').replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}
+            value={sensorData[key]}
+            unit={config.unit}
+            status={getSensorStatus(key, sensorData[key])}
+            color={config.color}
+          />
+        ))}
       </div>
 
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">Scoring Criteria</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="bg-white rounded-xl shadow-xl p-6 md:p-8">
+        <h3 className="text-2xl font-semibold text-slate-700 mb-6 text-center md:text-left">Scoring Criteria Overview</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {Object.entries(SCORING_CONFIG).map(([key, config]) => (
-            <div key={key} className="border rounded p-4">
-              <h4 className="font-semibold capitalize">{key.replace('_ppm', '').replace('_', ' ')}</h4>
-              <p className="text-sm text-gray-600">
-                Optimal: {config.optimal.min}-{config.optimal.max} {config.unit}
-              </p>
-              <p className="text-sm text-gray-600">
-                Acceptable: {config.acceptable.min}-{config.acceptable.max} {config.unit}
-              </p>
-              <p className="text-sm text-gray-600">
-                Weight: {(config.weight * 100).toFixed(0)}%
-              </p>
+            <div key={key} className="border border-slate-200 rounded-lg p-5 bg-slate-50 hover:bg-white transition-colors">
+              <div className="flex items-center mb-3">
+                <config.icon className="w-6 h-6 mr-3" style={{color: config.color}} />
+                <h4 className="text-lg font-medium text-slate-800 capitalize">{key.replace('_ppm', ' (PPM)').replace(/([A-Z])/g, ' $1').trim()}</h4>
+              </div>
+              <div className="text-sm space-y-1 text-slate-600">
+                <p><strong>Optimal:</strong> {config.optimal.min} - {config.optimal.max} {config.unit}</p>
+                <p><strong>Acceptable:</strong> {config.acceptable.min} - {config.acceptable.max} {config.unit}</p>
+                <p><strong>Weight:</strong> <span className="font-semibold" style={{color: config.color}}>{(config.weight * 100).toFixed(0)}%</span></p>
+              </div>
             </div>
           ))}
         </div>
       </div>
+      <footer className="text-center mt-12 py-6 border-t border-slate-200">
+          <p className="text-sm text-slate-500">© {new Date().getFullYear()} Living Condition Monitoring. Stay Informed.</p>
+      </footer>
     </div>
   );
 };
@@ -360,70 +391,80 @@ const Dashboard = ({ onNavigateToAnalytics, sensorData, score }) => {
 // Main App Component
 const App = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [sensorData, setSensorData] = useState(null);
+  const [sensorData, setSensorData] = useState(null); // Initialize with null for loading state
   const [score, setScore] = useState(0);
   const [lastNotificationTime, setLastNotificationTime] = useState(0);
+  const notificationCooldown = 60000; // 1 minute cooldown for poor, 5 for excellent
   
-  const firebaseServiceRef = useRef(new FirebaseService());
+  const firebaseServiceRef = useRef(null);
 
   useEffect(() => {
+    // Ensure FirebaseService is initialized only once
+    if (!firebaseServiceRef.current) {
+        firebaseServiceRef.current = new FirebaseService();
+    }
     const currentFirebaseService = firebaseServiceRef.current;
 
     const handleDataUpdate = (data) => {
       if (data) {
-        console.log('Setting sensor data:', data);
+        // console.log('Setting sensor data:', data);
         setSensorData(data);
         const newScore = calculateScore(data);
-        console.log('Calculated score:', newScore);
+        // console.log('Calculated score:', newScore);
         setScore(newScore);
       } else {
-        console.warn('No sensor data received, setting to null');
-        setSensorData(null);
-        setScore(0);
+        // console.warn('No sensor data received, maintaining previous or setting to null');
+        // Keep existing data if new data is null to prevent UI flickering during brief disconnects
+        // Only set to null if it was null initially, or explicitly on error.
+        // For now, if null comes, we show loading.
+        if (sensorData !== null) { // if we had data before and now it's null, maybe an issue
+            console.warn("Received null data after having valid data. Potential connection issue.");
+            // Optionally, you could setSensorData(null) here to show loading state again
+            // or keep stale data for a bit with a "connection lost" indicator.
+            // For simplicity, we'll let it reflect the null.
+        }
+         setSensorData(null);
+         setScore(0);
       }
     };
 
     const unsubscribe = currentFirebaseService.subscribeToLatestReadings(handleDataUpdate);
 
     return () => {
-      console.log('Cleaning up Firebase subscription');
+      // console.log('Cleaning up Firebase subscription in App component');
       if (unsubscribe) {
         unsubscribe();
       }
     };
-  }, []);
+  }, []); // Empty dependency array: runs once on mount, cleans up on unmount
 
   useEffect(() => {
-    if (sensorData === null) return;
+    if (sensorData === null) return; // Don't run notifications if no data
 
     const now = Date.now();
-    if (score < 4 && (now - lastNotificationTime > 60000)) {
-      showToast('⚠️ Living conditions are poor! Check your environment.', 'error');
+    if (score < 4 && (now - lastNotificationTime > notificationCooldown)) { // Poor conditions
+      showToast('⚠️ Living conditions are poor! Check your environment.', 'error', AlertTriangle);
       setLastNotificationTime(now);
-    } else if (score >= 8 && (now - lastNotificationTime > 300000)) {
-      showToast('🌟 Excellent living conditions!', 'success');
+    } else if (score >= 8 && (now - lastNotificationTime > notificationCooldown * 5)) { // Excellent conditions (longer cooldown)
+      showToast('🌟 Excellent living conditions! Well done.', 'success', CheckCircle);
       setLastNotificationTime(now);
     }
   }, [score, sensorData, lastNotificationTime]);
 
-  const handleNavigateToAnalytics = () => {
-    setCurrentPage('analytics');
-  };
-
-  const handleBackToDashboard = () => {
-    setCurrentPage('dashboard');
-  };
+  const handleNavigateToAnalytics = () => setCurrentPage('analytics');
+  const handleBackToDashboard = () => setCurrentPage('dashboard');
 
   if (currentPage === 'analytics') {
     return (
       <AnalyticsDashboard 
         onBack={handleBackToDashboard}
-        sensorData={sensorData}
-        score={score}
+        // sensorData and score are not directly passed to AnalyticsDashboard in your current setup
+        // It fetches its own historical data. If needed, you can pass latest sensorData/score
       />
     );
   }
 
+  // Pass sensorData and score to Dashboard
   return (
     <Dashboard 
       onNavigateToAnalytics={handleNavigateToAnalytics}
