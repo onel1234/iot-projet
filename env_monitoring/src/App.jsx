@@ -1,17 +1,14 @@
 //import { useState } from 'react'
+//import { useState } from 'react'
 import './App.css'
-import Header from "./components/layout/Header";
-import Footer from './components/layout/Footer';
-import LivingConditionScore from './components/dashboard/LivingConditionScore';
+import Dashboard from './dashboard/Dashboard'
+
 
 function App() {
   return (
     <div>
-      <Header />
      
-     <LivingConditionScore/>
-      
-      <Footer />
+    <Dashboard />
     </div>
   )
 }
