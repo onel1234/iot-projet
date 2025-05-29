@@ -1,27 +1,30 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable no-undef */
 import React, { useState, useEffect, useRef } from 'react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
-import { Thermometer, Droplets, Wind, Volume2, Activity, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
-
-// Import Firebase compat libraries for v8 API style
+import { Thermometer, Droplets, Wind, Volume2, Activity, AlertTriangle, CheckCircle, XCircle, BarChart3 } from 'lucide-react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/database';
+import AnalyticsDashboard from '../components/AnalyticsDashboard';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement);
 
-// Firebase configuration - provided by you
+// Firebase configuration
 const FIREBASE_CONFIG = {
   databaseURL: "https://living-condition-monitoring-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-// Initialize Firebase (ensure it's done only once)
+// Initialize Firebase
 if (!firebase.apps.length) {
   firebase.initializeApp(FIREBASE_CONFIG);
+  console.log('Firebase initialized successfully');
 } else {
-  firebase.app(); // if already initialized, use that one
+  firebase.app();
+  console.log('Using existing Firebase app instance');
 }
 
-// Scoring weights and ranges (remains unchanged)
+// Scoring weights and ranges
 const SCORING_CONFIG = {
   temperature: {
     weight: 0.25,
@@ -37,19 +40,19 @@ const SCORING_CONFIG = {
   },
   airQuality_ppm: {
     weight: 0.3,
-    optimal: { min: 0, max: 400 }, // Assuming PPM, 0-400 is very good
-    acceptable: { min: 0, max: 1000 }, // WHO good AQI is <50, moderate 50-100. For PPM, 1000 is often CO2 threshold.
+    optimal: { min: 0, max: 400 },
+    acceptable: { min: 0, max: 1000 },
     unit: 'PPM'
   },
   soundLevel: {
     weight: 0.2,
-    optimal: { min: 0, max: 0.3 }, // Assuming normalized or specific sensor scale
+    optimal: { min: 0, max: 0.3 },
     acceptable: { min: 0, max: 0.7 },
     unit: 'Level'
   }
 };
 
-// Toast notification function (remains unchanged)
+// Toast notification function
 const showToast = (message, type = 'info') => {
   const toast = document.createElement('div');
   toast.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-all duration-300 ${
@@ -62,7 +65,7 @@ const showToast = (message, type = 'info') => {
   document.body.appendChild(toast);
   
   setTimeout(() => {
-    if (toast.parentNode) { // Check if toast is still in DOM
+    if (toast.parentNode) {
       toast.style.opacity = '0';
       setTimeout(() => {
         if (toast.parentNode) {
@@ -73,44 +76,39 @@ const showToast = (message, type = 'info') => {
   }, 3000);
 };
 
-// Firebase service - REAL IMPLEMENTATION
+// Firebase service
 class FirebaseService {
   subscribeToLatestReadings(callback) {
-    // !!! IMPORTANT: Replace '/latestReadings' with the actual path to your sensor data in Firebase Realtime Database.
-    // For example:
-    // - If your data is at the root: firebase.database().ref()
-    // - If under a node 'sensor_data': firebase.database().ref('/sensor_data')
-    // - If under a device ID, e.g., 'device123/readings': firebase.database().ref('/device123/readings')
-    const dataRef = firebase.database().ref('/latest_readings'); // <<< --- VERIFY AND CHANGE THIS PATH
+    const dataRef = firebase.database().ref('/latest_readings');
+    console.log('Subscribing to Firebase path: /latest_readings');
 
     const listener = (snapshot) => {
       const data = snapshot.val();
       if (data) {
+        console.log('Received Firebase data:', data);
         callback(data);
       } else {
-        // This can happen if the path is wrong, no data exists, or due to permissions.
-        console.warn("No data received from Firebase at the specified path. Check path and Firebase security rules.");
-        callback(null); // Signal that data is not available
+        console.warn("No data received from Firebase at /latest_readings. Check path and security rules.");
+        callback(null);
       }
     };
 
     const errorCallback = (error) => {
       console.error("Firebase read error:", error);
-      showToast(`Firebase error: ${error.message}. Check console, Firebase path, and security rules.`, 'error');
-      callback(null); // Signal error/no data
+      showToast(`Firebase error: ${error.message}. Check console, path, and security rules.`, 'error');
+      callback(null);
     };
 
-    // Attach the listener
     dataRef.on('value', listener, errorCallback);
 
-    // Return an unsubscribe function to be called on cleanup
     return () => {
-      dataRef.off('value', listener); // Detach the same listener instance
+      console.log('Unsubscribing from Firebase path: /latest_readings');
+      dataRef.off('value', listener);
     };
   }
 }
 
-// Scoring algorithm (remains unchanged)
+// Scoring algorithm
 const calculateScore = (sensorData) => {
   if (!sensorData) return 0;
 
@@ -119,14 +117,13 @@ const calculateScore = (sensorData) => {
 
   Object.entries(SCORING_CONFIG).forEach(([key, config]) => {
     const value = sensorData[key];
-    if (value !== undefined && value !== null && !isNaN(parseFloat(value))) { // Ensure value is a usable number
+    if (value !== undefined && vina !== null && !isNaN(parseFloat(value))) {
       const numericValue = parseFloat(value);
       let score = 0;
       
       if (numericValue >= config.optimal.min && numericValue <= config.optimal.max) {
         score = 10;
-      }
-      else if (numericValue >= config.acceptable.min && numericValue <= config.acceptable.max) {
+      } else if (numericValue >= config.acceptable.min && numericValue <= config.acceptable.max) {
         const distanceFromOptimal = Math.min(
           Math.abs(numericValue - config.optimal.min),
           Math.abs(numericValue - config.optimal.max)
@@ -135,15 +132,13 @@ const calculateScore = (sensorData) => {
           config.optimal.min - config.acceptable.min,
           config.acceptable.max - config.optimal.max
         );
-        // Handle maxDistance being 0 to avoid division by zero if optimal and acceptable bounds are the same
-        score = 5 + (maxDistance > 0 ? (5 * (1 - distanceFromOptimal / maxDistance)) : 5); 
-      }
-      else {
+        score = 5 + (maxDistance > 0 ? (5 * (1 - distanceFromOptimal / maxDistance)) : 5);
+      } else {
         const distanceFromAcceptable = Math.min(
           Math.abs(numericValue - config.acceptable.min),
           Math.abs(numericValue - config.acceptable.max)
         );
-        score = Math.max(0, 5 * Math.exp(-distanceFromAcceptable / (key === 'airQuality_ppm' ? 1000 : 100))); // Adjusted decay for AQ
+        score = Math.max(0, 5 * Math.exp(-distanceFromAcceptable / (key === 'airQuality_ppm' ? 1000 : 100)));
       }
 
       totalScore += score * config.weight;
@@ -154,14 +149,13 @@ const calculateScore = (sensorData) => {
   return totalWeight === 0 ? 0 : Math.round((totalScore / totalWeight) * 10) / 10;
 };
 
-
-// Gauge Chart Component (remains unchanged)
+// Gauge Chart Component
 const GaugeChart = ({ score }) => {
   const getScoreColor = (score) => {
-    if (score >= 8) return '#22c55e'; // Green
-    if (score >= 6) return '#eab308'; // Yellow
-    if (score >= 4) return '#f97316'; // Orange
-    return '#ef4444'; // Red
+    if (score >= 8) return '#22c55e';
+    if (score >= 6) return '#eab308';
+    if (score >= 4) return '#f97316';
+    return '#ef4444';
   };
 
   const getScoreLabel = (score) => {
@@ -187,17 +181,13 @@ const GaugeChart = ({ score }) => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false
-      },
-      tooltip: {
-        enabled: false
-      }
+      legend: { display: false },
+      tooltip: { enabled: false }
     }
   };
 
   return (
-    <div className="relative w-64 h-64">
+    <div className="relative w-64 h-64 mx-auto">
       <Doughnut data={data} options={options} />
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className="text-4xl font-bold" style={{ color }}>
@@ -211,12 +201,12 @@ const GaugeChart = ({ score }) => {
   );
 };
 
-// Sensor Card Component (remains unchanged)
+// Sensor Card Component
 const SensorCard = ({ icon: Icon, title, value, unit, status }) => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'excellent': return 'text-green-500';
-      case 'good': return 'text-yellow-500'; // Changed from yellow to orange for 'good' to match AlertTriangle better
+      case 'good': return 'text-yellow-500';
       case 'poor': return 'text-red-500';
       default: return 'text-gray-500';
     }
@@ -225,7 +215,7 @@ const SensorCard = ({ icon: Icon, title, value, unit, status }) => {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'excellent': return CheckCircle;
-      case 'good': return AlertTriangle; // AlertTriangle often implies caution/warning
+      case 'good': return AlertTriangle;
       case 'poor': return XCircle;
       default: return Activity;
     }
@@ -252,57 +242,7 @@ const SensorCard = ({ icon: Icon, title, value, unit, status }) => {
 };
 
 // Main Dashboard Component
-const Dashboard = () => {
-  const [sensorData, setSensorData] = useState(null);
-  const [score, setScore] = useState(0);
-  const [lastNotificationTime, setLastNotificationTime] = useState(0);
-  
-  // useRef to hold the FirebaseService instance. Initialize it once.
-  const firebaseServiceRef = useRef(new FirebaseService());
-
-  // Effect for Firebase subscription
-  useEffect(() => {
-    const currentFirebaseService = firebaseServiceRef.current;
-
-    const handleDataUpdate = (data) => {
-      if (data) {
-        setSensorData(data);
-        const newScore = calculateScore(data); 
-        setScore(newScore);
-      } else {
-        // Data is null (e.g., path error, no data, or permission issue)
-        // This will make the UI show the loading spinner again.
-        setSensorData(null); 
-        setScore(0); // Reset score
-      }
-    };
-
-    const unsubscribe = currentFirebaseService.subscribeToLatestReadings(handleDataUpdate);
-
-    // Cleanup function for when the component unmounts
-    return () => {
-      if (unsubscribe) {
-        unsubscribe(); // Detach the Firebase listener
-      }
-    };
-  }, []); // Empty dependency array: effect runs once on mount and cleans up on unmount.
-
-  // Effect for handling notifications based on score changes
-  useEffect(() => {
-    // Don't run if data isn't loaded yet or was cleared due to an error
-    if (sensorData === null) return; 
-
-    const now = Date.now();
-    // Check score and time since last notification
-    if (score < 4 && (now - lastNotificationTime > 60000)) { // Poor score, notify max once per 60s
-      showToast('⚠️ Living conditions are poor! Check your environment.', 'error');
-      setLastNotificationTime(now);
-    } else if (score >= 8 && (now - lastNotificationTime > 300000)) { // Excellent score, notify max once per 5 mins
-      showToast('🌟 Excellent living conditions!', 'success');
-      setLastNotificationTime(now);
-    }
-  }, [score, sensorData, lastNotificationTime]); // Dependencies for re-running notification logic
-
+const Dashboard = ({ onNavigateToAnalytics, sensorData, score }) => {
   const getSensorStatus = (key, value) => {
     if (value === null || value === undefined) return 'unknown';
     
@@ -327,7 +267,7 @@ const Dashboard = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading sensor data from Firebase...</p>
-          <p className="mt-2 text-sm text-gray-500">If this persists, check your internet connection, Firebase path in the code, and Firebase security rules. Open the browser console for error details.</p>
+          <p className="mt-2 text-sm text-gray-500">If this persists, check your internet connection, Firebase path, and security rules.</p>
         </div>
       </div>
     );
@@ -347,14 +287,19 @@ const Dashboard = () => {
           <p className="text-gray-600 mt-4">
             Last updated: {
               sensorData.timestamp 
-              ? (
-                  !isNaN(parseInt(sensorData.timestamp)) // Check if timestamp is a number-like string
-                  ? new Date(parseInt(sensorData.timestamp) * 1000).toLocaleString() // Assumes Unix timestamp in seconds
-                  : String(sensorData.timestamp) // If not parsable as int, display as is
-                )
-              : 'N/A'
+                ? (!isNaN(parseInt(sensorData.timestamp))
+                    ? new Date(parseInt(sensorData.timestamp) * 1000).toLocaleString()
+                    : String(sensorData.timestamp))
+                : 'N/A'
             }
           </p>
+          <button
+            onClick={onNavigateToAnalytics}
+            className="mt-4 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg shadow-md transition-colors duration-200 flex items-center gap-2 mx-auto"
+          >
+            <BarChart3 className="w-5 h-5" />
+            View Analytics
+          </button>
         </div>
       </div>
 
@@ -412,4 +357,80 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+// Main App Component
+const App = () => {
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [sensorData, setSensorData] = useState(null);
+  const [score, setScore] = useState(0);
+  const [lastNotificationTime, setLastNotificationTime] = useState(0);
+  
+  const firebaseServiceRef = useRef(new FirebaseService());
+
+  useEffect(() => {
+    const currentFirebaseService = firebaseServiceRef.current;
+
+    const handleDataUpdate = (data) => {
+      if (data) {
+        console.log('Setting sensor data:', data);
+        setSensorData(data);
+        const newScore = calculateScore(data);
+        console.log('Calculated score:', newScore);
+        setScore(newScore);
+      } else {
+        console.warn('No sensor data received, setting to null');
+        setSensorData(null);
+        setScore(0);
+      }
+    };
+
+    const unsubscribe = currentFirebaseService.subscribeToLatestReadings(handleDataUpdate);
+
+    return () => {
+      console.log('Cleaning up Firebase subscription');
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sensorData === null) return;
+
+    const now = Date.now();
+    if (score < 4 && (now - lastNotificationTime > 60000)) {
+      showToast('⚠️ Living conditions are poor! Check your environment.', 'error');
+      setLastNotificationTime(now);
+    } else if (score >= 8 && (now - lastNotificationTime > 300000)) {
+      showToast('🌟 Excellent living conditions!', 'success');
+      setLastNotificationTime(now);
+    }
+  }, [score, sensorData, lastNotificationTime]);
+
+  const handleNavigateToAnalytics = () => {
+    setCurrentPage('analytics');
+  };
+
+  const handleBackToDashboard = () => {
+    setCurrentPage('dashboard');
+  };
+
+  if (currentPage === 'analytics') {
+    return (
+      <AnalyticsDashboard 
+        onBack={handleBackToDashboard}
+        sensorData={sensorData}
+        score={score}
+      />
+    );
+  }
+
+  return (
+    <Dashboard 
+      onNavigateToAnalytics={handleNavigateToAnalytics}
+      sensorData={sensorData}
+      score={score}
+    />
+  );
+};
+
+export default App;
