@@ -121,7 +121,7 @@ const AnalyticsDashboard = ({ onBack }) => {
         if (processedData.length === 0 && Object.keys(rawData).length > 0) {
             console.warn("All historical records were filtered out during processing. Check timestamp formats and values in Firebase.");
         } else if (processedData.length === 0) {
-             console.warn("No processable historical data found after fetching. Check Firebase path and data structure.");
+            console.warn("No processable historical data found after fetching. Check Firebase path and data structure.");
         }
         processedData.sort((a, b) => a.timestamp - b.timestamp); // Sort by milliseconds timestamp
         return processedData;
@@ -162,8 +162,8 @@ const AnalyticsDashboard = ({ onBack }) => {
             hour: `${hourKey.padStart(2, '0')}:00`,
             avgTemperature: hourRecord.avgTemperature !== undefined && !isNaN(parseFloat(hourRecord.avgTemperature)) ? Number(hourRecord.avgTemperature) : undefined,
             avgHumidity: hourRecord.avgHumidity !== undefined && !isNaN(parseFloat(hourRecord.avgHumidity)) ? Number(hourRecord.avgHumidity) : undefined,
-            avgAirQuality: (hourRecord.avgAirQuality_ppm !== undefined && !isNaN(parseFloat(hourRecord.avgAirQuality_ppm))) ? Number(hourRecord.avgAirQuality_ppm) : 
-                           (hourRecord.avgAirQuality !== undefined && !isNaN(parseFloat(hourRecord.avgAirQuality))) ? Number(hourRecord.avgAirQuality) : undefined,
+            avgAirQuality:(hourRecord.avgAirQuality_ppm !== undefined && !isNaN(parseFloat(hourRecord.avgAirQuality_ppm))) ? Number(hourRecord.avgAirQuality_ppm) : 
+                          (hourRecord.avgAirQuality !== undefined && !isNaN(parseFloat(hourRecord.avgAirQuality))) ? Number(hourRecord.avgAirQuality) : undefined,
             avgSoundLevel: hourRecord.avgSoundLevel !== undefined && !isNaN(parseFloat(hourRecord.avgSoundLevel)) ? Number(hourRecord.avgSoundLevel) : undefined,
             avgScore: hourRecord.avgScore !== undefined && !isNaN(parseFloat(hourRecord.avgScore)) ? Number(hourRecord.avgScore) : undefined,
             readings: hourRecord.readings !== undefined && !isNaN(parseInt(hourRecord.readings)) ? Number(hourRecord.readings) : 0
@@ -180,7 +180,7 @@ const AnalyticsDashboard = ({ onBack }) => {
       } catch (err) {
         console.error("Firebase Error in fetchHourlyData:", err);
         let detailedErrorMessage = `Failed to load hourly pattern data from path '${path}'.`;
-         if (err.message) detailedErrorMessage += ` Firebase reported: ${err.message}`;
+        if (err.message) detailedErrorMessage += ` Firebase reported: ${err.message}`;
         if (!error) setError(detailedErrorMessage);
         else console.warn("Hourly data fetch also failed, but an error related to historical data is already displayed:", detailedErrorMessage);
         return [];
@@ -227,7 +227,7 @@ const AnalyticsDashboard = ({ onBack }) => {
           latest: values[values.length - 1]
         };
       } else {
-         stats[metric] = { avg: 'N/A', min: 'N/A', max: 'N/A', latest: 'N/A' };
+        stats[metric] = { avg: 'N/A', min: 'N/A', max: 'N/A', latest: 'N/A' };
       }
     });
     return stats;
@@ -345,7 +345,7 @@ const AnalyticsDashboard = ({ onBack }) => {
           </ResponsiveContainer>
         </div>
       ) : (
-         <p className="text-slate-500 text-center py-10">No hourly pattern data. Check console.</p>
+        <p className="text-slate-500 text-center py-10">No hourly pattern data. Check console.</p>
       )}
     </ChartWrapper>
   );
