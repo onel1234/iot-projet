@@ -1,19 +1,18 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Area, AreaChart, PieChart, Pie, Cell, ComposedChart,
   ScatterChart, Scatter, RadarChart as RechartsRadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
-import { 
-  Calendar, Clock, TrendingUp, TrendingDown, Activity, AlertTriangle, 
+import {
+  Calendar, Clock, TrendingUp, TrendingDown, Activity, AlertTriangle,
   BarChart3, ArrowLeft, Filter, Download,
-  Thermometer, Droplets, Wind, Volume2, Award, TrendingUpIcon, BarChartBig, ActivityIcon, Maximize // Added icons
-} from 'lucide-react'; // Added more icons
+  Thermometer, Droplets, Wind, Volume2, Award, TrendingUpIcon, BarChartBig, ActivityIcon, Maximize
+} from 'lucide-react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/database';
 
-// Initialize Firebase if not already done
 const FIREBASE_CONFIG = {
   databaseURL: "https://living-condition-monitoring-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
@@ -22,14 +21,13 @@ if (!firebase.apps.length) {
   firebase.initializeApp(FIREBASE_CONFIG);
 }
 
-// Color scheme for consistent styling
 const COLORS = {
-  temperature: '#ef4444', // Red
-  humidity: '#3b82f6',    // Blue
-  airQuality_ppm: '#22c55e', // Green
-  soundLevel: '#f59e0b', // Amber
-  score: '#8b5cf6',      // Violet
-  default: '#6b7280'    // Gray for fallback
+  temperature: '#ef4444',
+  humidity: '#3b82f6',
+  airQuality_ppm: '#22c55e',
+  soundLevel: '#f59e0b',
+  score: '#8b5cf6',
+  default: '#6b7280'
 };
 
 const METRIC_ICONS = {
@@ -42,23 +40,23 @@ const METRIC_ICONS = {
 
 const AnalyticsDashboard = ({ onBack }) => {
   const [timeRange, setTimeRange] = useState('7d');
-  const [selectedMetric, setSelectedMetric] = useState('all'); 
   const [historicalData, setHistoricalData] = useState([]);
   const [hourlyData, setHourlyData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('trends');
 
-  // --- Data Fetching useEffect (remains the same as your previous version) ---
   useEffect(() => {
-    const fetchHistoricalData = async (startTime) => {
-      console.log("Fetching historical data starting from timestamp:", startTime);
+    // MODIFIED: Expects startTimeInSeconds
+    const fetchHistoricalData = async (startTimeInSeconds) => {
+      console.log("Fetching historical data starting from Firebase timestamp (expected seconds):", startTimeInSeconds);
       const dataRef = firebase.database().ref('environmental_data');
       try {
-        const snapshot = await dataRef.orderByChild('timestamp').startAt(startTime).once('value');
+        // MODIFIED: Querying with startTimeInSeconds, assuming 'timestamp' in Firebase is in seconds
+        const snapshot = await dataRef.orderByChild('timestamp').startAt(startTimeInSeconds).once('value');
         
         if (!snapshot.exists()) {
-          console.warn("Snapshot does not exist for 'environmental_data' with startAt:", startTime);
+          console.warn("Snapshot does not exist for 'environmental_data' with startAt (seconds):", startTimeInSeconds);
           return [];
         }
 
@@ -67,31 +65,48 @@ const AnalyticsDashboard = ({ onBack }) => {
             console.warn("Raw data from Firebase for 'environmental_data' is not a valid object or is null:", rawData);
             return [];
         }
-        // console.log("Raw historical data received (first 500 chars):", JSON.stringify(rawData, null, 2).substring(0, 500) + "...");
-
+        
         const processedData = Object.keys(rawData).map(key => {
           const record = rawData[key];
           if (!record || typeof record !== 'object') {
             console.warn(`Skipping invalid historical record for key ${key}:`, record);
             return null;
           }
-          let timestampNum = record.timestamp;
-          if (typeof timestampNum === 'string') {
-            const parsed = parseInt(timestampNum, 10);
-            if (!isNaN(parsed)) timestampNum = parsed;
+
+          let firebaseTimestamp = record.timestamp; // Assumed to be in SECONDS from Firebase
+
+          if (typeof firebaseTimestamp === 'string') {
+            const parsed = parseInt(firebaseTimestamp, 10);
+            if (!isNaN(parsed)) {
+              firebaseTimestamp = parsed;
+            } else {
+              console.warn(`Could not parse timestamp string to number for key ${key}:`, record.timestamp);
+              return null; 
+            }
           }
-          if (typeof timestampNum !== 'number' || isNaN(timestampNum)) {
-            console.warn(`Skipping historical record with invalid or missing timestamp (key: ${key}). Record:`, record);
+          
+          // Validate the Firebase timestamp (seconds)
+          if (typeof firebaseTimestamp !== 'number' || isNaN(firebaseTimestamp) || firebaseTimestamp <= 0) { 
+            console.warn(`Skipping historical record with invalid, zero, or negative Firebase timestamp (key: ${key}). Original TS: ${record.timestamp}, Parsed TS: ${firebaseTimestamp}. Record:`, record);
             return null;
           }
-          const dateObj = new Date(timestampNum);
-          if (isNaN(dateObj.getTime())) {
-            console.warn(`Skipping historical record with timestamp that results in invalid Date object (key: ${key}, timestamp: ${timestampNum}). Record:`, record);
+
+          // MODIFIED: Convert SECONDS from Firebase to MILLISECONDS for JavaScript Date
+          const timestampMs = firebaseTimestamp * 1000;
+          // console.log(`Key: ${key}, Firebase TS (s): ${firebaseTimestamp}, Converted TS (ms): ${timestampMs}`);
+
+
+          const dateObj = new Date(timestampMs);
+          // If timestampMs was 0 (due to firebaseTimestamp being 0), dateObj.getFullYear() would be 1970.
+          // We filter out such records as they usually indicate missing or corrupt data for time-series.
+          if (isNaN(dateObj.getTime()) || dateObj.getFullYear() < 1971) { 
+            console.warn(`Skipping historical record: timestamp results in invalid or pre-1971 Date object (key: ${key}, originalFirebaseTS_s: ${firebaseTimestamp}, convertedTS_ms: ${timestampMs}). Record:`, record);
             return null;
           }
+
           return {
             ...record, 
-            timestamp: timestampNum,
+            timestamp: timestampMs, // CRITICAL: Store the MILLISECONDS timestamp for charts and JS
             date: dateObj.toISOString().split('T')[0],
             hour: dateObj.getHours(),
             time: dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
@@ -104,12 +119,11 @@ const AnalyticsDashboard = ({ onBack }) => {
         }).filter(item => item !== null);
 
         if (processedData.length === 0 && Object.keys(rawData).length > 0) {
-            console.warn("All historical records were filtered out during processing.");
+            console.warn("All historical records were filtered out during processing. Check timestamp formats and values in Firebase.");
         } else if (processedData.length === 0) {
-             console.warn("No processable historical data found after fetching.");
+             console.warn("No processable historical data found after fetching. Check Firebase path and data structure.");
         }
-        processedData.sort((a, b) => a.timestamp - b.timestamp);
-        // console.log(`Processed ${processedData.length} historical records.`);
+        processedData.sort((a, b) => a.timestamp - b.timestamp); // Sort by milliseconds timestamp
         return processedData;
       } catch (err) {
         console.error("Firebase Error in fetchHistoricalData:", err);
@@ -119,13 +133,13 @@ const AnalyticsDashboard = ({ onBack }) => {
         return [];
       }
     };
+
     const fetchHourlyData = async () => {
       const now = new Date();
       const year = now.getFullYear();
       const month = (now.getMonth() + 1).toString().padStart(2, '0');
       const day = now.getDate().toString().padStart(2, '0');
       const path = `aggregated_data/hourly/${year}/${month}/${day}`;
-      // console.log("Fetching hourly aggregated data from path:", path);
       const hourlyAggRef = firebase.database().ref(path);
       try {
         const snapshot = await hourlyAggRef.once('value');
@@ -138,7 +152,6 @@ const AnalyticsDashboard = ({ onBack }) => {
             console.warn("Raw hourly data from Firebase is not a valid object or is null:", rawData);
             return [];
         }
-        // console.log("Raw hourly data received (first 500 chars):", JSON.stringify(rawData, null, 2).substring(0, 500) + "...");
         const processedData = Object.keys(rawData).map(hourKey => {
           const hourRecord = rawData[hourKey];
           if (!hourRecord || typeof hourRecord !== 'object') {
@@ -163,7 +176,6 @@ const AnalyticsDashboard = ({ onBack }) => {
             console.warn("No processable hourly data found after fetching.");
         }
         processedData.sort((a, b) => a.hour.localeCompare(b.hour));
-        // console.log(`Processed ${processedData.length} hourly aggregated records.`);
         return processedData;
       } catch (err) {
         console.error("Firebase Error in fetchHourlyData:", err);
@@ -174,27 +186,33 @@ const AnalyticsDashboard = ({ onBack }) => {
         return [];
       }
     };
+
     const loadData = async () => {
       setLoading(true);
       setError(null);
-      const currentTimestamp = Date.now();
-      let startTime;
+      const currentTimestampMs = Date.now(); // milliseconds
+      let startTimeMs;
       switch (timeRange) {
-        case '24h': startTime = currentTimestamp - (24 * 60 * 60 * 1000); break;
-        case '7d': startTime = currentTimestamp - (7 * 24 * 60 * 60 * 1000); break;
-        case '30d': startTime = currentTimestamp - (30 * 24 * 60 * 60 * 1000); break;
-        default: startTime = currentTimestamp - (7 * 24 * 60 * 60 * 1000);
+        case '24h': startTimeMs = currentTimestampMs - (24 * 60 * 60 * 1000); break;
+        case '7d': startTimeMs = currentTimestampMs - (7 * 24 * 60 * 60 * 1000); break;
+        case '30d': startTimeMs = currentTimestampMs - (30 * 24 * 60 * 60 * 1000); break;
+        default: startTimeMs = currentTimestampMs - (7 * 24 * 60 * 60 * 1000);
       }
-      const histData = await fetchHistoricalData(startTime);
+      
+      // MODIFIED: Convert startTime to SECONDS for Firebase query
+      const startTimeForFirebaseQuerySeconds = Math.floor(startTimeMs / 1000);
+
+      const histData = await fetchHistoricalData(startTimeForFirebaseQuerySeconds); // Pass startTime in seconds
       const hrlyData = await fetchHourlyData(); 
       setHistoricalData(histData);
       setHourlyData(hrlyData);
       setLoading(false);
     };
     loadData();
-  }, [timeRange]); // Note: 'error' was removed from dependency array as it's for display and could cause loops if fetch fails repeatedly.
+  // }, [timeRange, error]); // Removed 'error' from deps if it causes loops on persistent errors.
+  }, [timeRange]); // Consider if 'error' dependency is needed or if it causes unwanted refetch loops.
 
-  // --- Statistics and Chart Utility Functions (remain the same) ---
+
   const getStatistics = () => {
     if (!historicalData.length) return {};
     const stats = {};
@@ -216,30 +234,27 @@ const AnalyticsDashboard = ({ onBack }) => {
   };
   const statistics = getStatistics();
 
-  const formatXAxisTick = (timestamp) => {
-    if (!timestamp) return '';
-    const date = new Date(timestamp);
+  // These formatter functions expect timestamp in MILLISECONDS
+  const formatXAxisTick = (timestampMs) => {
+    if (!timestampMs || timestampMs <= 0) return ''; // Guard against 0 or invalid ms timestamps
+    const date = new Date(timestampMs);
+    if (isNaN(date.getTime())) return ''; // Further guard
+
     if (timeRange === '24h') return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
-  const formatTooltipLabel = (timestamp) => {
-    if (!timestamp) return '';
-    return new Date(timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
-  };
+  const formatTooltipLabel = (timestampMs) => {
+    if (!timestampMs || timestampMs <= 0) return '';
+    const date = new Date(timestampMs);
+    if (isNaN(date.getTime())) return '';
 
-  // --- Chart Components (minor UI tweaks if needed, but mostly functional) ---
-  // TrendChart, ScoreChart, HourlyPatternChart, DistributionChart, CorrelationChart, RadarChartComponent
-  // These components will benefit from the overall page styling and consistent chart wrappers.
-  // For brevity, their internal structure remains largely the same as your previous version,
-  // but they will now be wrapped in the new styled chart containers.
+    return date.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  };
 
   const ChartWrapper = ({ title, children }) => (
     <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow duration-300">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-xl font-semibold text-slate-700">{title}</h3>
-        {/* <button className="text-slate-400 hover:text-slate-600">
-            <Maximize size={18} />
-        </button> */}
       </div>
       {children}
     </div>
@@ -248,11 +263,18 @@ const AnalyticsDashboard = ({ onBack }) => {
   const TrendChart = () => (
     <ChartWrapper title="Environmental Trends">
       {historicalData.length > 0 ? (
-        <div className="h-80"> {/* Ensure fixed height for responsive container */}
+        <div className="h-80"> 
           <ResponsiveContainer width="100%" height="100%">
+            {/* XAxis dataKey="timestamp" will use the processed millisecond timestamp */}
             <LineChart data={historicalData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-              <XAxis dataKey="timestamp" tickFormatter={formatXAxisTick} tick={{ fontSize: 11, fill: '#666' }} domain={['dataMin', 'dataMax']} type="number" />
+              <XAxis 
+                dataKey="timestamp" 
+                tickFormatter={formatXAxisTick} 
+                tick={{ fontSize: 11, fill: '#666' }} 
+                domain={['dataMin', 'dataMax']} 
+                type="number" 
+              />
               <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#666' }} domain={['auto', 'auto']} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#666' }} domain={['auto', 'auto']} />
               <Tooltip labelFormatter={formatTooltipLabel} formatter={(value, name) => [value, name.replace('_ppm', ' (PPM)')]} />
@@ -270,25 +292,38 @@ const AnalyticsDashboard = ({ onBack }) => {
     </ChartWrapper>
   );
 
-  const ScoreChart = () => (
-    <ChartWrapper title="Living Condition Score Trend">
-      {historicalData.length > 0 && historicalData.some(d => d.score !== undefined) ? (
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={historicalData.filter(d => d.score !== undefined)}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-              <XAxis dataKey="timestamp" tickFormatter={formatXAxisTick} tick={{ fontSize: 11, fill: '#666' }} domain={['dataMin', 'dataMax']} type="number" />
-              <YAxis domain={[0, 10]} tick={{ fontSize: 11, fill: '#666' }} />
-              <Tooltip labelFormatter={formatTooltipLabel} />
-              <Area type="monotone" dataKey="score" stroke={COLORS.score} fill={COLORS.score} fillOpacity={0.3} strokeWidth={2} dot={false} connectNulls={true} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        <p className="text-slate-500 text-center py-10">No score data available for trend.</p>
-      )}
-    </ChartWrapper>
-  );
+  const MetricAveragesChart = ({ statsData }) => {
+    const chartData = [
+      { name: 'Temperature', avg: statsData.temperature?.avg, unit: '°C', fill: COLORS.temperature },
+      { name: 'Humidity', avg: statsData.humidity?.avg, unit: '%', fill: COLORS.humidity },
+      { name: 'Air Quality', avg: statsData.airQuality_ppm?.avg, unit: 'PPM', fill: COLORS.airQuality_ppm },
+      { name: 'Sound Level', avg: statsData.soundLevel?.avg, unit: 'units', fill: COLORS.soundLevel },
+    ].filter(item => item.avg !== 'N/A' && item.avg !== undefined && !isNaN(item.avg));
+
+    return (
+      <ChartWrapper title="Overall Metric Averages">
+        {chartData.length > 0 ? (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 30, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#666' }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#666' }} width={80} />
+                <Tooltip formatter={(value, name, props) => [`${value} ${props.payload.unit || ''}`, "Average"]} />
+                <Bar dataKey="avg" name="Average Value" barSize={20}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="text-slate-500 text-center py-10">No average data available to display.</p>
+        )}
+      </ChartWrapper>
+    );
+  };
 
   const HourlyPatternChart = () => (
     <ChartWrapper title="Hourly Patterns (Today)">
@@ -305,7 +340,7 @@ const AnalyticsDashboard = ({ onBack }) => {
               {hourlyData.some(d => d.avgTemperature !== undefined) && <Bar yAxisId="left" dataKey="avgTemperature" fill={COLORS.temperature} name="Avg Temp (°C)" />}
               {hourlyData.some(d => d.avgHumidity !== undefined) && <Bar yAxisId="left" dataKey="avgHumidity" fill={COLORS.humidity} name="Avg Humidity (%)" />}
               {hourlyData.some(d => d.avgAirQuality !== undefined) && <Bar yAxisId="left" dataKey="avgAirQuality" fill={COLORS.airQuality_ppm} name="Avg AQI (PPM)" />}
-              {hourlyData.some(d => d.avgScore !== undefined) && <Line yAxisId="right" type="monotone" dataKey="avgScore" stroke={COLORS.score} strokeWidth={3} name="Avg Score" dot={false} />}
+              {hourlyData.some(d => d.avgScore !== undefined) && <Line yAxisId="right" type="monotone" dataKey="avgScore" stroke={COLORS.score} strokeWidth={3} name="Avg Score" dot={false} />} 
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -315,59 +350,58 @@ const AnalyticsDashboard = ({ onBack }) => {
     </ChartWrapper>
   );
   
-  const DistributionChart = () => {
-    const scoreDistributionConfig = [
-      { range: '0-2', min: 0, max: 2, count: 0, color: '#ef4444' },
-      { range: '2-4', min: 2, max: 4, count: 0, color: '#f97316' },
-      { range: '4-6', min: 4, max: 6, count: 0, color: '#eab308' },
-      { range: '6-8', min: 6, max: 8, count: 0, color: '#22c55e' },
-      { range: '8-10', min: 8, max: 10, count: 0, color: '#16a34a' }
+  const TemperatureDistributionChart = ({ data }) => {
+    const tempBins = [
+      { range: '< 15°C', min: -Infinity, max: 15, count: 0, color: '#3b82f6' },
+      { range: '15-20°C', min: 15, max: 20, count: 0, color: '#60a5fa' },
+      { range: '20-25°C', min: 20, max: 25, count: 0, color: '#22c55e' },
+      { range: '25-30°C', min: 25, max: 30, count: 0, color: '#f97316' },
+      { range: '> 30°C', min: 30, max: Infinity, count: 0, color: '#ef4444' }
     ];
-    let hasScoreDataForDistribution = false;
+    let hasTempDataForDistribution = false;
 
-    if (historicalData.length > 0) {
-      historicalData.forEach(d => {
-        if (d.score != null && !isNaN(d.score)) {
-          hasScoreDataForDistribution = true;
-          for (let bin of scoreDistributionConfig) {
-            if (d.score >= bin.min && d.score < bin.max) { bin.count++; break; }
-            if (bin.max === 10 && d.score === 10) { bin.count++; break; }
+    if (data.length > 0) {
+      data.forEach(d => {
+        if (d.temperature != null && !isNaN(d.temperature)) {
+          hasTempDataForDistribution = true;
+          for (let bin of tempBins) {
+            if (d.temperature >= bin.min && d.temperature < bin.max) {
+              bin.count++;
+              break;
+            }
           }
         }
       });
     }
-    const finalDistributionData = scoreDistributionConfig.filter(d => d.count > 0);
+    const finalDistributionData = tempBins.filter(bin => bin.count > 0 || hasTempDataForDistribution); 
 
     return (
-      <ChartWrapper title="Score Distribution">
-        {hasScoreDataForDistribution && finalDistributionData.length > 0 ? (
+      <ChartWrapper title="Temperature Distribution">
+        {hasTempDataForDistribution && finalDistributionData.some(bin => bin.count > 0) ? (
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={finalDistributionData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="count"
-                  labelLine={false}
-                  label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
-                    const RADIAN = Math.PI / 180;
-                    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                    const x  = cx + (radius + 25) * Math.cos(-midAngle * RADIAN);
-                    const y = cy  + (radius + 25) * Math.sin(-midAngle * RADIAN);
-                    return (
-                      <text x={x} y={y} fill="#4A5568" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={11}>
-                        {`${finalDistributionData[index].range} (${(percent * 100).toFixed(0)}%)`}
-                      </text>
-                    );
-                  }}
-                >
-                  {finalDistributionData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={entry.color} /> ))}
-                </Pie>
-                <Tooltip formatter={(value, name, props) => [`${value} readings`, `Range: ${props.payload.payload.range}`]} />
-                <Legend wrapperStyle={{fontSize: "12px"}} />
-              </PieChart>
+              <BarChart data={finalDistributionData} margin={{ top: 5, right: 20, left: 0, bottom: 25 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                <XAxis 
+                    dataKey="range" 
+                    tick={{ fontSize: 11, fill: '#666' }} 
+                    angle={-25} 
+                    textAnchor="end" 
+                    height={50}
+                    interval={0}
+                />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#666' }} />
+                <Tooltip formatter={(value, name, props) => [`${value} readings`, `Range: ${props.payload.range}`]} />
+                <Bar dataKey="count" name="Readings Count">
+                  {finalDistributionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         ) : (
-          <p className="text-slate-500 text-center py-10">No score data for distribution.</p>
+          <p className="text-slate-500 text-center py-10">No temperature data for distribution analysis.</p>
         )}
       </ChartWrapper>
     );
@@ -396,13 +430,13 @@ const AnalyticsDashboard = ({ onBack }) => {
   const RadarChartComponent = () => {
     const radarMetrics = [];
     const currentStats = statistics;
-    const scaleTemp = (val) => Math.min(10, Math.max(0, 10 - Math.abs(val - 22) / 2));
-    const scaleHumidity = (val) => Math.min(10, Math.max(0, 10 - Math.abs(val - 50) / 5));
-    const scaleAirQuality = (val) => Math.max(0, 10 - (val / 100));
-    const scaleSound = (val) => Math.max(0, 10 - (val * 20));
+    const scaleTemp = (val) => Math.min(10, Math.max(0, 10 - Math.abs(val - 22) / 2)); 
+    const scaleHumidity = (val) => Math.min(10, Math.max(0, 10 - Math.abs(val - 50) / 5)); 
+    const scaleAirQuality = (val) => Math.max(0, 10 - (val / 20)); 
+    const scaleSound = (val) => Math.max(0, 10 - (val * 20)); 
 
     if (currentStats.temperature && currentStats.temperature.latest !== 'N/A') radarMetrics.push({ metric: 'Temp', current: scaleTemp(currentStats.temperature.latest), optimal: 8, fullMark: 10 });
-    if (currentStats.humidity && currentStats.humidity.latest !== 'N/A') radarMetrics.push({ metric: 'Humidity', current: scaleHumidity(currentStats.humidity.latest), optimal: 7, fullMark: 10 });
+    if (currentStats.humidity && currentStats.humidity.latest !== 'N/A') radarMetrics.push({ metric: 'Humidity', current: scaleHumidity(currentStats.humidity.latest), optimal: 8, fullMark: 10 });
     if (currentStats.airQuality_ppm && currentStats.airQuality_ppm.latest !== 'N/A') radarMetrics.push({ metric: 'Air Qual.', current: scaleAirQuality(currentStats.airQuality_ppm.latest), optimal: 7, fullMark: 10 });
     if (currentStats.soundLevel && currentStats.soundLevel.latest !== 'N/A') radarMetrics.push({ metric: 'Sound', current: scaleSound(currentStats.soundLevel.latest), optimal: 8, fullMark: 10 });
 
@@ -429,13 +463,13 @@ const AnalyticsDashboard = ({ onBack }) => {
     );
   };
   
-  // --- StatisticsCards: Enhanced UI ---
   const StatisticsCards = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
       {Object.keys(statistics).length > 0 ? Object.entries(statistics).map(([key, stats]) => {
-        const IconComponent = METRIC_ICONS[key] || Activity; // Fallback icon
+        const IconComponent = METRIC_ICONS[key] || Activity; 
         const color = COLORS[key] || COLORS.default;
-        const title = key.replace('_ppm', ' (PPM)').replace(/([A-Z])/g, ' $1').trim();
+        let title = key.replace('_ppm', ' (PPM)');
+        title = title.charAt(0).toUpperCase() + title.slice(1).replace(/([A-Z])/g, ' $1');
 
         return (
           <div 
@@ -446,14 +480,14 @@ const AnalyticsDashboard = ({ onBack }) => {
             <div className="p-5">
               <div className="flex items-center mb-3">
                 <IconComponent className="w-7 h-7 mr-3" style={{ color: color }} />
-                <h3 className="text-md font-semibold text-slate-700 capitalize">
+                <h3 className="text-md font-semibold text-slate-700">
                   {title}
                 </h3>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between items-baseline">
                   <span className="text-slate-500">Current:</span>
-                  <span className="font-bold text-lg" style={{ color: color }}>{stats.latest}</span>
+                  <span className="font-bold text-lg" style={{ color: color }}>{stats.latest === undefined || stats.latest === null || isNaN(stats.latest) ? 'N/A' : stats.latest}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Average:</span>
@@ -475,7 +509,6 @@ const AnalyticsDashboard = ({ onBack }) => {
     </div>
   );
 
-  // --- Loading and Error States: Enhanced UI ---
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-6">
@@ -495,7 +528,7 @@ const AnalyticsDashboard = ({ onBack }) => {
           <p className="text-red-600 mb-6 text-base">{error}</p>
           <p className="text-sm text-slate-500 mb-8">
             Please check your browser's developer console (F12) for technical details.
-            Ensure your Firebase connection and data structure are correct.
+            Ensure your Firebase connection and data structure (especially timestamp units) are correct.
           </p>
           <button
             onClick={onBack}
@@ -509,11 +542,9 @@ const AnalyticsDashboard = ({ onBack }) => {
     );
   }
 
-  // --- Main Dashboard JSX ---
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="max-w-full mx-auto"> {/* Changed from max-w-7xl to full for wider layout */}
-        {/* Header Section */}
+      <div className="max-w-full mx-auto">
         <header className="mb-8">
           <div className="flex flex-col md:flex-row items-center justify-between mb-4">
             <button
@@ -534,7 +565,7 @@ const AnalyticsDashboard = ({ onBack }) => {
                 <option value="30d">Last 30 Days</option>
               </select>
               <button 
-                onClick={() => { /* Export logic remains the same */
+                onClick={() => { 
                     if (historicalData.length === 0) { alert("No data to export."); return; }
                     const headers = Object.keys(historicalData[0]).join(',');
                     const csvData = historicalData.map(row => Object.values(row).map(val => typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val).join(',')).join('\n');
@@ -559,15 +590,13 @@ const AnalyticsDashboard = ({ onBack }) => {
           </div>
         </header>
 
-        {/* Statistics Cards */}
         <StatisticsCards />
 
-        {/* Tab Navigation */}
         <div className="mb-8 flex justify-center">
           <div className="border-b border-slate-300">
             <nav className="-mb-px flex space-x-6" aria-label="Tabs">
               {[
-                { id: 'trends', label: 'Trends', icon: TrendingUpIcon }, // Using specific icons
+                { id: 'trends', label: 'Trends', icon: TrendingUpIcon },
                 { id: 'patterns', label: 'Patterns', icon: BarChartBig },
                 { id: 'analysis', label: 'Analysis', icon: ActivityIcon }
               ].map(({ id, label, icon: Icon }) => (
@@ -588,12 +617,11 @@ const AnalyticsDashboard = ({ onBack }) => {
           </div>
         </div>
 
-        {/* Chart Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {activeTab === 'trends' && (
             <>
               <TrendChart />
-              <ScoreChart />
+              <MetricAveragesChart statsData={statistics} /> 
             </>
           )}
           
@@ -606,12 +634,11 @@ const AnalyticsDashboard = ({ onBack }) => {
           
           {activeTab === 'analysis' && (
             <>
-              <DistributionChart />
+              <TemperatureDistributionChart data={historicalData} />
               <CorrelationChart />
             </>
           )}
         </div>
-        {/* Footer (Optional) */}
         <footer className="text-center mt-12 py-6 border-t border-slate-200">
             <p className="text-sm text-slate-500">© {new Date().getFullYear()} Living Condition Monitoring. All rights reserved.</p>
         </footer>
